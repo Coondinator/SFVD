@@ -1,5 +1,7 @@
 import io
 import sys
+import json
+import tqdm
 import torch
 import decord
 import scipy
@@ -7,8 +9,9 @@ import numpy as np
 from typing import Tuple
 import torchvision.transforms as T
 from einops import rearrange, repeat
+from utils import get_fvd_feats, frechet_distance, load_i3d_pretrained
 
-print (sys.getdefaultencoding())
+
 def compute_fvd(feats_fake: np.ndarray, feats_real: np.ndarray) -> float:
     print('feats_fake.shape', feats_fake.shape)
     mu_gen, sigma_gen = compute_stats(feats_fake)
@@ -92,16 +95,68 @@ def read_video(path: str, height, width) -> np.ndarray:
     print('video shape', video.shape)
     return video
 
+
+@torch.no_grad()
+def calculate_fvd(videos1, videos2, device):
+    # support grayscale input, if grayscale -> channel*3
+    # BTCHW -> BCTHW
+    # videos -> [batch_size, channel, timestamps, h, w]
+    videos1 = torch.from_numpy(videos1).permute(0, 4, 1, 2, 3).to(device)
+    videos2 = torch.from_numpy(videos2).permute(0, 4, 1, 2, 3).to(device)
+    print("calculate_fvd...")
+
+    # videos [batch_size, timestamps, channel, h, w]
+
+    assert videos1.shape == videos2.shape
+
+    # i3d = load_i3d_pretrained(device=device)
+    detector_path = './i3d_torchscript.pt'
+    detector_kwargs = dict(rescale=False, resize=False, return_features=True)
+
+
+    # Load all tensors to the original device
+    detector = torch.jit.load(detector_path).eval().to(device)
+    detector = torch.nn.DataParallel(detector)
+    fvd_results = []
+
+
+    # for calculate FVD, each clip_timestamp must >= 10
+    true_feat = get_fvd_feats(videos1, i3d=detector, device=device)
+    pred_feat = get_fvd_feats(videos2, i3d=detector, device=device)
+    fvd_results = frechet_distance(true_feat, pred_feat)
+    print("fvd_results", fvd_results)
+
+    '''
+    for clip_timestamp in tqdm(range(10, videos1.shape[-3] + 1)):
+        # get a video clip
+        # videos_clip [batch_size, channel, timestamps[:clip], h, w]
+        videos_clip1 = videos1[:, :, : clip_timestamp]
+        videos_clip2 = videos2[:, :, : clip_timestamp]
+
+        # get FVD features
+        feats1 = get_fvd_feats(videos_clip1, i3d=detector, device=device)
+        feats2 = get_fvd_feats(videos_clip2, i3d=detector, device=device)
+
+        # calculate FVD when timestamps[:clip]
+        fvd_results[clip_timestamp] = frechet_distance(feats1, feats2)
+
+    result = {
+        "value": fvd_results,
+        "video_setting": videos1.shape,
+        "video_setting_name": "batch_size, channel, time, heigth, width",
+    }
+    '''
+
+    return fvd_results
+
+
 if __name__ == '__main__':
     true_video = read_video('./out.mp4', width=224, height=224)
     true_video = np.expand_dims(true_video, axis=0).astype(np.float32)
     fake_video = read_video('./copy.mp4', width=224, height=224)
     fake_video = np.expand_dims(fake_video, axis=0).astype(np.float32)
-    compute_fvd_torch(videos_fake=fake_video, videos_real=true_video, device='cuda')
-    test = torch.tensor([[1.0, 3.0], [1.0, 4.0]])
-    eigenvalues, eigenvectors = torch.linalg.eig(test)
-    sqrt_eigenvalues = torch.sqrt(eigenvalues)
-    sqrt_A = eigenvectors @ torch.diag(sqrt_eigenvalues) @ torch.transpose(eigenvectors, 0, 1)
-
+    # compute_fvd_torch(videos_fake=fake_video, videos_real=true_video, device='cuda')
+    result = calculate_fvd(videos1=true_video, videos2=fake_video, device='cuda')
+    print(json.dumps(result, indent=4))
     print("Square Root of A:")
-    print(sqrt_A)
+    # print(sqrt_A)
