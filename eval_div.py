@@ -6,12 +6,9 @@ from PIL import Image
 import tqdm
 import torch
 import decord
-import scipy
 import numpy as np
-from typing import Tuple
 import torchvision.transforms as T
 from einops import rearrange, repeat
-from utils import get_fvd_feats, frechet_distance, load_i3d_pretrained
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 MIN_THRESH = 200
 VIDEO_LENGTH = 256
@@ -52,7 +49,6 @@ def read_video_from_img(path: str, height, width):
     print('image_stack shape', video.shape)
     video = video.permute(0, 3, 1, 2) # [t, c, h, w]
     print('video after rearange shape', video.shape)
-    # video = torch.from_numpy(rearrange(image_stack, "f h w c -> f c h w"))
     transform = T.Compose([
         # T.RandomResizedCrop(size=(height, width), scale=(0.8, 1.0), ratio=(width/height, width/height), antialias=False)
         T.Resize(min(height, width), antialias=False),
