@@ -113,7 +113,6 @@ def calculate_fvd(videos1, videos2, device):
     detector_path = './i3d_torchscript.pt'
     detector_kwargs = dict(rescale=False, resize=False, return_features=True)
 
-
     # Load all tensors to the original device
     detector = torch.jit.load(detector_path).eval().to(device)
     detector = torch.nn.DataParallel(detector)
@@ -157,6 +156,4 @@ if __name__ == '__main__':
     fake_video = np.expand_dims(fake_video, axis=0).astype(np.float32)
     # compute_fvd_torch(videos_fake=fake_video, videos_real=true_video, device='cuda')
     result = calculate_fvd(videos1=true_video, videos2=fake_video, device='cuda')
-    print(json.dumps(result, indent=4))
-    print("Square Root of A:")
     # print(sqrt_A)
